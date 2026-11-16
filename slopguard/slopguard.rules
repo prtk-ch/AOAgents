@@ -1,0 +1,33 @@
+# severity | path glob | forbidden regex | message
+#
+# Each line is a convention you'd otherwise write in a comment nobody enforces.
+# Suppress a justified case in code with a trailing: # slopguard: ok <why>
+# Globs are comma-separated; a leading ! excludes (tests break prod rules on purpose).
+# These are starters — the value is in the rules YOU add after each agent mistake.
+
+# --- correctness floor -------------------------------------------------------
+deny | *.py,!test_*.py,!tests/*,!conftest.py | except\s*(Exception)?\s*:\s*pass | swallowed exception: log it or let it raise
+deny | *.py | except\s+Exception\s*:\s*return\s+(None|\[\]|\{\}|"")\s*$ | error turned into an empty value: callers cannot tell failure from no-data
+deny | *.go | if err != nil \{\s*\}  | empty error branch
+deny | *.go,!*_test.go | _ = err | discarded error
+deny | *.py,!test_*.py,!tests/*,!conftest.py | ^\s*assert\s | bare assert disappears under -O: raise instead
+deny | *.ts | catch\s*\([^)]*\)\s*\{\s*\} | swallowed exception
+
+# --- the agent tells (what slop actually looks like) -------------------------
+deny | *.py | ^\s*#\s*(TODO|FIXME).*(implement|later|for now) | placeholder left in a shipped path
+deny | *.py | ^\s*(\.\.\.|pass)\s*#\s*implement | stub left behind
+warn | *.py | ^\s*#\s*(Step \d|First,|Now we|This function) | narrating comment: delete it or make it say why, not what
+warn | *.go | ^\s*//\s*(Step \d|First,|Now we) | narrating comment
+deny | *.py | time\.sleep\(\s*\d+\s*\)\s*#?\s*(wait|flaky|race)? | sleep as synchronisation: wait on the condition
+deny | *.py | (?i)except.*:\s*#\s*(should not|never) happen | "cannot happen" branch with no handling
+
+# --- secrets / trust boundaries ---------------------------------------------
+deny | *.py,!test_*.py,!tests/*,!conftest.py | (?i)(api_key|secret|token|password)\s*=\s*["'][A-Za-z0-9_\-]{12,} | hardcoded credential
+deny | *.py | shell\s*=\s*True | shell=True on untrusted input: pass a list instead
+deny | *.py,!test_*.py,!tests/*,!conftest.py | \beval\(|\bexec\( | eval/exec on runtime data
+
+# --- enforceable architecture (the "Dune" layer: edit these for your repo) ---
+# An import that crosses a boundary is the cheapest architecture test there is.
+deny | */ui/*.py | ^\s*(from|import)\s+\w+\.db | ui must not import db directly: go through the service layer
+deny | */models/*.py | ^\s*(from|import)\s+\w+\.(views|api) | models must not depend on transport
+deny | */internal/*.go | "github.com/[^"]*/cmd/ | internal packages must not import commands

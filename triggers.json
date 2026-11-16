@@ -1,0 +1,12 @@
+[
+  {
+    "name": "heartbeat",
+    "every": 900,
+    "prompt": "Routine tick. Read MEMORY.md, decide if anything in it needs action now. If not, log one line and stop."
+  },
+  {
+    "name": "morning-brief",
+    "at": "08:30",
+    "prompt": "Write workspace/outbox/brief-<today>.md: what you learned yesterday from the logs and what is still open. Then prune MEMORY.md of anything stale."
+  }
+]

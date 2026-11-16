@@ -1,0 +1,9 @@
+.venv/
+state.json
+__pycache__/
+workspace/log/
+workspace/inbox/processed/
+workspace/outbox/
+
+.test_tmp/
+.env

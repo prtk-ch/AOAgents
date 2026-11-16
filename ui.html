@@ -1,0 +1,143 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>always-on</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --fg:#e8e8e8; --dim:#777; --line:#222; --hot:#fff; }
+  * { box-sizing:border-box }
+  body { margin:0; background:#000; color:var(--fg); font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { display:flex; gap:14px; align-items:baseline; flex-wrap:wrap;
+           padding:14px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:#000; z-index:2 }
+  h1 { font-size:13px; margin:0; letter-spacing:.14em; text-transform:uppercase }
+  .dim { color:var(--dim) }
+  .bad { color:#ff6b6b }
+  main { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); gap:0 }
+  section { padding:16px; border-right:1px solid var(--line); min-width:0 }
+  section + section { border-right:0 }
+  h2 { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
+       margin:0 0 10px; font-weight:400 }
+  h2:not(:first-child) { margin-top:26px }
+  .trig { display:flex; justify-content:space-between; align-items:center; gap:10px;
+          padding:8px 0; border-bottom:1px solid var(--line) }
+  .trig b { font-weight:500 }
+  button { font:inherit; color:var(--fg); background:#0d0d0d; border:1px solid #2c2c2c;
+           padding:5px 11px; cursor:pointer; border-radius:2px }
+  button:hover { background:#1b1b1b; color:var(--hot); border-color:#555 }
+  textarea, input { font:inherit; width:100%; color:var(--fg); background:#0a0a0a;
+                    border:1px solid #242424; padding:8px; border-radius:2px; resize:vertical }
+  .row { display:flex; gap:8px; margin-top:8px }
+  pre { white-space:pre-wrap; word-break:break-word; margin:0; background:#080808;
+        border:1px solid var(--line); padding:10px; max-height:300px; overflow:auto }
+  .run { border-bottom:1px solid var(--line); padding:9px 0 }
+  .run .meta { display:flex; gap:9px; align-items:baseline }
+  .run pre { margin-top:6px; border:0; background:none; padding:0; max-height:none; color:#c6c6c6 }
+  .spin { color:#ffd479 }
+  #pause.on { border-color:#8a6d00; color:#ffd479 }
+  .paused .trig { opacity:.45 }
+  .banner { background:#1a1405; border-bottom:1px solid #3a2d00; color:#ffd479;
+            padding:7px 16px; font-size:12px }
+  .files button { border:0; background:none; padding:2px 0; display:block; text-align:left; color:#9ecbff }
+  @media (max-width:860px){ main{grid-template-columns:1fr} section{border-right:0;border-bottom:1px solid var(--line)} }
+</style>
+
+<header>
+  <h1>always-on</h1>
+  <span class="dim" id="models"></span>
+  <span id="creds"></span>
+  <span class="dim" id="shell"></span>
+  <span style="margin-left:auto; display:flex; gap:8px; align-items:center">
+    <span class="dim" id="clock"></span>
+    <button id="pause" onclick="togglePause()"></button>
+    <button onclick="if(confirm('Stop the scheduler process? The page will go dead.'))
+                       post('/api/shutdown',{})" title="kills the process">Shut down</button>
+  </span>
+</header>
+
+<div class="banner" id="banner" hidden></div>
+
+<main>
+  <section>
+    <h2>Triggers</h2>
+    <div id="triggers"></div>
+
+    <h2>Fire an event</h2>
+    <textarea id="evt" rows="3" placeholder="Vendor emailed: invoice 4411 is overdue, reply today."></textarea>
+    <div class="row">
+      <button onclick="post('/api/event',{text:evt.value},'queued to inbox')">Drop in inbox</button>
+      <span class="dim" id="evtmsg"></span>
+    </div>
+
+    <h2>One-shot prompt</h2>
+    <textarea id="once" rows="3" placeholder="Read MEMORY.md and tell me what's open."></textarea>
+    <div class="row"><button onclick="post('/api/once',{prompt:once.value},'queued')">Run once</button></div>
+
+    <h2>Workspace</h2>
+    <div class="files" id="files"></div>
+    <pre id="viewer" style="margin-top:8px">(click a file)</pre>
+  </section>
+
+  <section>
+    <h2>Runs</h2>
+    <div id="runs"></div>
+    <h2>MEMORY.md</h2>
+    <pre id="memory"></pre>
+    <h2>Today's log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s ?? '').replace(/[<&]/g, c => ({'<':'&lt;','&':'&amp;'}[c]));
+
+async function post(url, body, msg) {
+  await fetch(url, {method:'POST', body:JSON.stringify(body)});
+  if (msg) { $('evtmsg').textContent = msg; setTimeout(() => $('evtmsg').textContent = '', 2000); }
+  refresh();
+}
+async function view(rel) {
+  const r = await (await fetch('/api/file?' + rel)).json();
+  $('viewer').textContent = rel + '\n\n' + r.text;
+}
+
+let paused = false;
+async function togglePause() { await post('/api/pause', {on: !paused}); }
+
+async function refresh() {
+  const s = await (await fetch('/api/state')).json();
+  paused = s.paused;
+  const b = $('pause');
+  b.textContent = paused ? 'Resume triggers' : 'Pause triggers';
+  b.classList.toggle('on', paused);
+  document.body.classList.toggle('paused', paused);
+  $('banner').hidden = !paused;
+  $('banner').textContent = 'PAUSED — no scheduled runs, inbox mail waits. '
+    + '"Fire now" and one-shots still work.';
+  $('models').textContent = s.model + (s.endpoint ? ' @ ' + s.endpoint.replace('https://','') : '');
+  $('creds').innerHTML = s.creds ? '<span class="dim">endpoint ok</span>'
+    : '<span class="bad">no endpoint in .env &mdash; dry runs, triggers still fire</span>';
+  $('shell').textContent = 'shell ' + (s.shell ? 'on' : 'off');
+  $('clock').textContent = new Date().toLocaleTimeString();
+
+  $('triggers').innerHTML = s.triggers.map(t => `
+    <div class="trig">
+      <span><b>${esc(t.name)}</b> <span class="dim">${esc(t.schedule)} &middot; last ${esc(t.last)} &middot; next in ${t.in}s</span></span>
+      <button onclick="post('/api/fire',{name:'${esc(t.name)}'},'queued')">Fire now</button>
+    </div>`).join('');
+
+  $('runs').innerHTML = s.recent.length ? s.recent.map(r => `
+    <div class="run">
+      <div class="meta"><b>${esc(r.name)}</b><span class="dim">${esc(r.at)}</span>
+        ${r.done ? '' : '<span class="spin">running</span>'}</div>
+      <pre>${esc(r.out)}</pre>
+    </div>`).join('') : '<span class="dim">nothing yet &mdash; fire a trigger</span>';
+
+  $('memory').textContent = s.memory || '(empty)';
+  $('log').textContent = s.log || '(empty)';
+  const links = (dir, names) => names.map(n =>
+    `<button onclick="view('${dir}/${n}')">${dir}/${esc(n)}</button>`).join('');
+  $('files').innerHTML = links('skills', s.skills) + links('inbox', s.inbox) + links('outbox', s.outbox)
+    || '<span class="dim">(no files)</span>';
+}
+refresh(); setInterval(refresh, 2000);
+</script>
